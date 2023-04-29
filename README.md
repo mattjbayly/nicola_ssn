@@ -1,8 +1,5 @@
 <a name="readme-top"></a>
 
-[![Contributors][contributors-shield]][contributors-url]
-[![Issues][issues-shield]][issues-url]
-
 <!-- PROJECT LOGO -->
 <br />
 
@@ -13,12 +10,17 @@
   <a href="https://github.com/mattjbayly/nicola_ssn">
     <img src="/www/img/logos.png" alt="Logo" height="80">
   </a>
-
+  
+  <p align="center" style="font-weight: bold;">
+  Matthew Bayly, M.J. Bayly Analytics Ltd.
+  </p>
+    <p align="center">
+  Support email: mjbayly@mjbayly.com
+  </p>
   <p align="center">
   Nicola Basin Spatial Stream Network SSN Model
     <br />
-    ·
-    <a href="https://github.com/mattjbayly/issues">Report Bugs</a>
+    <a href="https://github.com/mattjbayly/nicola_ssn/issues">Report Bugs</a>
     ·
     <a href="https://www.fs.usda.gov/rm/boise/AWAE/projects/SSN_STARS/downloads/SSN/SSNvignette2014.pdf">SSN Model Tutorial (Ver Hoef, 2014)</a>
     ·
