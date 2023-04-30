@@ -64,8 +64,8 @@ All features map onto the BC Freshwater Atlas (BCFWA, https://www2.gov.bc.ca/gov
 Everything is linked to the BCFWA IDs. The file structure follows the STARs framework (https://www.fs.usda.gov/rm/boise/AWAE/projects/SSN_STARS/downloads/STARS/STARS_vignette2014.pdf). Please refere to the STARs manual for a furter descritpion of terms like RIDs, RCAs etc.
 
 * **rid (reach ID)**: RID (reach ID) a unique ID value assigned to each streamline reach. The RIDs match the LFID (linear feature IDs from the BCFWA to facilite data linkages). Each stream reach has a unique RID.
-* **RCA polygon **: RCA (reach contributing area) is the lateral drainage boundary for an individual stream reach. For first-order (headwater stream) segments, the RCA polygons are miniature watershed. For larger streams, the RCA polygon outlines the overland draining directly to the stream. Each RCA is identified by a unique `rca_id`, and there is a one-to-one linkage between `rca_id` and `rid` (each stream segment has one RCA). In related literature, RCA polygons have been referred to as butterfly wings. In the SSN framework, the RCA polygons are the fundamental unit of analysis. Upstream summaries work by summaries values in all RCA polygons upstream from a stream reach.
-* **Network Index Tables **: Network index tables: Network index tables are pre-populated reference tables that contain the upstream and downstream relationships between all stream reaches and RCA IDs. These tables are generated externally in a graph model. If you wish to apply this framework to another system, please read the tutorials available in the STARs user manual. Note that there are numerous corrections that need to be made when working with the BCFWA in a new region. RCA polygons along mainstem segments have been corrected here, but the original “RCA-precursors” available in (FWA_WATERSHEDS_POLY.gdb) have inaccurate delineations around larger mainstem reaches. Please contact me if you wish to learn more - the process is non-trivial.
+* **RCA polygon**: RCA (reach contributing area) is the lateral drainage boundary for an individual stream reach. For first-order (headwater stream) segments, the RCA polygons are miniature watershed. For larger streams, the RCA polygon outlines the overland draining directly to the stream. Each RCA is identified by a unique `rca_id`, and there is a one-to-one linkage between `rca_id` and `rid` (each stream segment has one RCA). In related literature, RCA polygons have been referred to as butterfly wings. In the SSN framework, the RCA polygons are the fundamental unit of analysis. Upstream summaries work by summaries values in all RCA polygons upstream from a stream reach.
+* **Network Index Tables**: Network index tables: Network index tables are pre-populated reference tables that contain the upstream and downstream relationships between all stream reaches and RCA IDs. These tables are generated externally in a graph model. If you wish to apply this framework to another system, please read the tutorials available in the STARs user manual. Note that there are numerous corrections that need to be made when working with the BCFWA in a new region. RCA polygons along mainstem segments have been corrected here, but the original “RCA-precursors” available in (FWA_WATERSHEDS_POLY.gdb) have inaccurate delineations around larger mainstem reaches. Please contact me if you wish to learn more - the process is non-trivial.
 
 
 ### Generating Your Own Basin Variables
@@ -181,11 +181,8 @@ The `summarize_upstream()` function has several options to facilitate different 
 
 ## SSN Model Object
 
+A full SSN model object is availabe for use. See `./NICA.ssn/`. Documentation to come.
 
-<!-- CONTRIBUTING -->
-## Contributing
-
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
 <!-- ACKNOWLEDGMENTS -->
 ## License
@@ -211,5 +208,5 @@ Project Link: [https://github.com/mattjbayly/nicola_ssn](https://github.com/matt
 [ssn-components]: www/img/preview.png
 [app-screenshot]: www/img/strm_walk.gif
 [app-screenshot2]: www/img/enviro_metrics.gif
-[ssn-components2]: www/img/demo_line.png
-[ssn-components3]: www/img/demo_polygon.png
+[ssn-components2]: www/img/demo_polygon.png
+[ssn-components3]: www/img/demo_line.png
