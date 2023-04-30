@@ -1,175 +1,358 @@
 #' Summarize Metric to Upstream Basin
 #'
-#' Creates a plot of the crayon colors in \code{\link{brocolors}}
+#' Accumulator function to calculate values upstream from each stream reach.
 #'
-#' @param method2order method to order colors (\code{"hsv"} or \code{"cluster"})
-#' @param cex character expansion for the text
-#' @param mar margin parameters; vector of length 4 (see \code{\link[graphics]{par}})
+#' @param net Streamline to rca network object (large file). Load from the external Dropbox link: `./network/NICA_rid_us_rca.csv`.
+#' @param summary_type Options include `percent_coverage`, `linear_density`, `feature_count`, or `area_weighted_mean`. `percent_coverage` is the simple upstream summary evaluating the polygon area of an environmental variable divided by the upstream basin area. `percent_coverage` is most useful for metrics such as a land cover class, % agriculture etc. summary units are (km2/km2) or (0 – 1, portion of the upstream basin area covered by the layer of interest). `linear_density` is similar to `percent_coverage` but is used when the input layer consists of lines rather than polygons. The output metric is expressed as upstream density as upstream kilometers of the layer of interest divided by the upstream basin area. A common example for `linear_density` is road density (km of road / km2 of the watershed area. `feature_count` is similar to the other two metrics, but consists of an upstream density count of features. An example of `feature_count` could include upstream water licenses (#/km2 of water licenses issued upstream / divided by the upstream basin area) or stream cross density (#/km2). The final option `area_weighted_mean` is reserved for cases when the upstream summary metric is a numeric value for each RCA polygon. For example, consider elevation, mean annual temperature, PET etc. These metrics will all have estimates for each RCA. It’s necessary to summarize these metrics using an area-weighted mean where the size of the RCA unit is used as the weight in the upstream summary. `area_weighted_mean` is most useful when the metric of interest consists of a continuous numeric variable.
+#' @param summary_field Character. Summary field (column name) if summary type is `area_weighted_mean`. For example, if calculating the upstream basin elevation the summary field would likely consist of a user column named 'elev' or 'el'. `summary_field` is not relevant for other summary methods.
+#' @param rca_polygons RCA (reach contributing area) polygons with a unique ID field rca_id. rca_polygons must be supplied as an `sf` object with a unique ID field `rca_id`. See example data `.\network\NICA_rca.gpkg` in the Dropbox link.
+#' @param rca_env_data Environmental input data layer. Either a `data.frame` or `sf` object with environmental input data summarized to the `rca_polygons`. The `rca_env_data` must have the field `rca_id`. GIS summaries with the RCA polygons should be done before running this function.
+#' @param utm_zone EPSG code for local UTM zone (e.g., 26910).
+#' @param output_fieldname Character. User-defined output field name (e.g., `upstream_basin_elevation`)
 #'
-#' @return None
+#' @return a data.frame with input values summarized to the stream network
 #'
-#' @examples
-#' plot_crayons()
 #'
 #' @export
 #'
-summarize_upstream <- function(
-    target_group = NA,   # ELKR
-    dsum = NA,           # Variable set to batch process for group
-    utm_zone = NA,       # epsg code
-    net = NA,            # 04_poly_stream_network_us_index
-    out_dir = NA,        # 1_bcfwa_attributes
-    rca_weights = NA     # ELKR_drainage_area.csv
-) {
-
+summarize_upstream <- function(net = NA,
+                               summary_type = NA,
+                               summary_field = NA,
+                               rca_polygons = NA,
+                               rca_env_data = NA,
+                               utm_zone = NA,
+                               output_fieldname = "field_name") {
   # Make the network a data.table - remove duplicates (just to be safe)
   print("Building network data table")
-  net <- net[which(!(duplicated(net))),]
-  setDT(net); class(net)
+  setDT(net)
+  class(net)
 
   # Index keys to improve speed
-  keycols = c("rca_id","rid")
-  setkeyv(net,keycols)
+  keycols = c("rca_id", "rid")
+  setkeyv(net, keycols)
   key(net)
 
   all_variables <- list()
 
-  reach_out <- data.frame(
-    rid = unique(net$rid)
-  )
-  reach_out$group <- target_group
+  reach_out <- data.frame(rid = unique(net$rid))
 
 
-  # Loop through variables in set
-  for(i in 1:nrow(dsum)) {
+  # RCA summary data
+  dat <- rca_env_data
 
-    # Load the RCA data
-    this_var <- dsum[i, ]
-    fname <- gsub("REPLACE", target_group, this_var$fname)
+  # Fix first colname if not rca_id
+  if (!("rca_id" %in% colnames(dat))) {
+    stop("rca_env_data must have an rca_id column...")
+  }
 
-    if(!(file.exists(fname))) {
-      reach_out$new_var <- NA
-      colnames(reach_out)[ncol(reach_out)] <- this_var$dat_col_names_out
-      next
+
+  # ===================================================
+  # ===================================================
+
+  # Run simple area-based summary for percent coverage
+  if (summary_type %in% c("percent_coverage", "linear_density")) {
+
+    # Look at area or length of target layer
+    print("Converting to utm projection...")
+    dat <- st_transform(dat, utm_zone)
+
+    # Calculate area as m2
+    if (summary_type == "percent_coverage") {
+      dat$area_m2 <- round(as.numeric(st_area(dat)), 6)
+    }
+    if (summary_type == "linear_density") {
+      # note this variable is actually length
+      # but stored here for convenience
+      dat$area_m2 <- as.numeric(st_length(dat))
     }
 
-    dat <- read.csv(fname)
-    print(this_var$dat_col_names_in)
+    area_metric <- sum(dat$area_m2, na.rm = TRUE)
 
-    # Fix first colname if not rca_id
-    if(!("rca_id" %in% colnames(dat))) {
-      colnames(dat)[1] <- "rca_id"
-    }
-
-    # Fix name of target column
-    dat$rcavals <- as.numeric(dat[, c(this_var$dat_col_names_in)])
-    dat <- dat[, c("rca_id", "rcavals")]
-    mydt <- dat
+    # Summarize area by RCA id
+    dat_df <- dat
+    st_geometry(dat_df) <- NULL
+    dat_sum <-
+      dat_df %>% group_by(rca_id) %>% summarise(rcavals = sum(area_m2, na.rm = TRUE))
+    mydt <- dat_sum
 
     # Convert RCA data to simple data.table object for speed.
     # from data.frame to data.table
-    setDT(mydt); class(mydt)
+    setDT(mydt)
+    class(mydt)
     setkey(mydt, rca_id)
     key(mydt)
 
+    # Merge to the stream to rid index table
+    # A giant summary table will be produced to group-by
+    # (rca polygons us and their associated values)
+    my_merge <- merge(mydt, net, key = "rca_id")
+
+    # Note the speed of data.table - takes 100X longer in base or dplyr
+
+    # Calculate the total sum for each stream reach (total upstream area)
+    # data.table group-by/summarize function (dplyr slow)
+    # rid is streamline edge id
+    metric_summary <- my_merge[, .(ussum_metric = sum(rcavals)), .(rid)]
+
+    # head(my_merge)
+    # This object includes the total area coverage upstream
+    # of each stream ID
+
+    # -------------------------------------------------
+    print("Re-running summary for full RCA polygons...")
+
+    # Also calculate area of RCA polygons as m2
+    rca_polygons <- st_transform(rca_polygons, utm_zone)
+    rca_polygons$area_m2 <-
+      as.numeric(st_area(rca_polygons))
+    rca_polygons <- rca_polygons[, c("rca_id", "area_m2")]
+
+    area_rca <- sum(rca_polygons$area_m2, na.rm = TRUE)
+
+    if (area_metric > area_rca) {
+      warning("Metric area exceeds rca area...")
+    }
+
+    rca_polygons_df <- rca_polygons
+
+    st_geometry(rca_polygons_df) <- NULL
+
+    # Redo above steps for full RCA polygons
+    mydt <- rca_polygons_df
+    setDT(mydt)
+    class(mydt)
+    setkey(mydt, rca_id)
+    key(mydt)
+    # Merge to the stream to rid index table
+    my_merge <- merge(mydt, net, key = "rca_id")
+
+    # Full RCA summary
+    full_rca_summary <- my_merge[, .(ussum_full = sum(area_m2)), .(rid)]
+
+    # This table includes the full drainage area upstream for
+    # each rca polygon
+    # head(full_rca_summary)
+
+    # Calculate upstream percent coverage by merging and
+    # dividing areas
+    fsum <- merge(
+      full_rca_summary,
+      metric_summary,
+      by.x = "rid",
+      by.y = "rid",
+      all.x = TRUE,
+      all.y = FALSE
+    )
+
+    if (summary_type == "linear_density") {
+      print("Units are km per km2...")
+      # Convert from m/m2 to km/km2
+      fsum$coverage <-
+        (fsum$ussum_metric / 1000) / (fsum$ussum_full * 0.000001)
+
+      fsum$coverage <- ifelse(fsum$ussum_metric == 0, 0, fsum$coverage)
+
+    } else {
+      # Area based m2/m2 = km2/km2
+      fsum$coverage <- fsum$ussum_metric / fsum$ussum_full
+    }
+
+    fsum$coverage <- ifelse(is.na(fsum$coverage), 0, fsum$coverage)
+
+    # Update variable name
+    colnames(fsum)[colnames(fsum) == "coverage"] <- output_fieldname
+
+    # Export and return
+    ret_obj <- as.data.frame(fsum)
+    ret_obj <- ret_obj[, c("rid", output_fieldname)]
+
+    return(ret_obj)
+
+  }
 
 
-    # ----------------------------------------------------
-    # Simple area based summary - total upstream area - sum
-    if(this_var$dat_us_method == "sum") {
 
-      # SECRET MAGIC TRICK PART 1: Next merge to the entire streamline index table
-      # This merge will make a giant table for each streamline of all the
-      # RCA polygons US and their associated values
-      my_merge <- merge(mydt, net, key="rca_id")
 
-      # speed magic of data.table
-      head(my_merge)
-      nrow(my_merge); nrow(net) # These table should be close to each other...
+  # ===================================================
+  # ===================================================
 
-      # SECRET MAGIC TRICK PART 2:
-      # Summarize the total upstream values for each stream segment.
-      # Use data.table group-by/summarize function instead of dplyr due to speed
-      # rid is streamline edge id
-      my_summary <- my_merge[,.(ussum=sum(rcavals)),.(rid)]
+  # Run area-weighted mean summary
+  if (summary_type == "area_weighted_mean") {
 
-      #head(my_merge)
-      #nrow(my_summary); nrow(dat) # These table should be close to each other...
-      # Save object for later...
+    # Covert to data frame
+    print("Prepping data...")
+    if (any(class(dat) == "sf")) {
+      # Pre-summarize across RCAs
+      dat$tmp_area <- as.numeric(st_area(dat))
+      st_geometry(dat) <- NULL
+
+      # summarize across RCAs (if duplicated)
+      if(any(duplicated(dat$rca_id))) {
+        dat_new <- dat %>% group_by(rca_id) %>% summarise(output = weighted.mean(.data[[summary_field]], w = tmp_area, na.rm = TRUE))
+        colnames(dat_new)[2] <- summary_field
+        dat <- dat_new
+      }
+
     }
 
 
-    # ----------------------------------------------------
-    # Add on weights if method is mean
-    if(this_var$dat_us_method == "wmean") {
 
-      # Need to add on weights
-      w_weights <- merge(mydt, rca_weights, key="rca_id")
+    # Filter to target fields
+    dat <- dat[, c("rca_id", summary_field)]
+    colnames(dat) <- c("rca_id", "sfield")
+    dat$sfield <- as.numeric(as.character(dat$sfield))
 
-      # Next merge to the entire streamline index table
-      my_merge <- merge(w_weights, net, key="rca_id") # speed magic
+    # Need to get area of each RCA ID polygon
+    rca_polygons <- st_transform(rca_polygons, utm_zone)
+    rca_polygons$area_m2 <-
+      round(as.numeric(st_area(rca_polygons)), 4)
+    rca_polygons <- rca_polygons[, c("rca_id", "area_m2")]
+    rca_polygons_df <- rca_polygons
+    st_geometry(rca_polygons_df) <- NULL
 
-      # For this metric we want to do a weighted mean based on the RCA polygon area
-      my_summary <- my_merge[,.(ussum=weighted.mean(rcavals, area_m2)),.(rid)];
+    # Need to add on weights (rca polygon area)
+    mydt <- merge(
+      rca_polygons_df,
+      dat,
+      by.x = "rca_id",
+      by.y = "rca_id",
+      all.x = TRUE,
+      all.y = FALSE
+    )
 
+    # Need to deal with duplicated per RCA
+
+    # Convert RCA data to simple data.table object for speed.
+    # from data.frame to data.table
+    setDT(mydt)
+    class(mydt)
+    setkey(mydt, rca_id)
+    key(mydt)
+
+    # Next merge to the entire streamline index table
+    my_merge <- merge(mydt, net, key = "rca_id")
+
+    # For this metric we want to do a
+    # weighted mean based on the RCA polygon area
+    my_summary <-
+      my_merge[, .(ussum = weighted.mean(sfield, area_m2)), .(rid)]
+
+
+    mout <- as.data.frame(my_summary)
+
+    # Update variable name
+    colnames(mout)[colnames(mout) == "ussum"] <- output_fieldname
+
+    # Export and return
+    ret_obj <- as.data.frame(mout[, c("rid", output_fieldname)])
+
+    return(ret_obj)
+
+  }
+
+  # ===================================================
+  # ===================================================
+
+  # Run feature count summary
+  if (summary_type == "feature_count") {
+    # Covert to data frame
+    print("Prepping data...")
+    if (any(class(dat) == "sf")) {
+      st_geometry(dat) <- NULL
     }
 
-
-    # Perform some basic QA checks
-    if(colnames(my_summary)[2] != "ussum") { stop("Bad column name") }
-    if(any(is.infinite(my_summary$ussum))) { stop("Inf in column") }
-
-    # Set NAs to zero... actually don't might be meaningful NA vs 0
-
-
-
-    # ----------------------------------------------------
-    # QA PLOT
-    # ----------------------------------------------------
-    if(FALSE) {
-      # Inspect in plot window to confirm results
-      # merge these summaries of rid back to stream lines
-      strm <- st_read(dsn=paste0(out_dir, "/01b_streamline_geometry/",target_group,"_strm.gpkg"))
-      this_strm <- merge(strm, my_summary, by.x="rid", by.y="rid", all.x=TRUE, all.y=FALSE)
-
-      # plot(st_geometry(strm))
-      # print(nrow(strm))
-      # rca <- st_read(dsn=paste0(out_dir, "/02_rca_polygons/",target_group,"_rca.gpkg"))
-      # plot(st_geometry(rca))
-      # plot(st_geometry(rca), col = "yellow", border = NA)
-      # plot(st_geometry(strm), add = TRUE)
-
-
-      #plot(this_strm["ussum"])
-      # try log trans
-      temp <- this_strm
-      temp <- this_strm %>% filter(STREAM_ORDER>1)
-      temp$logda <- log(temp$ussum + 1)
-      plot(temp["logda"], lwd=temp$STREAM_ORDER/3, main = this_var$dat_col_names_out)
-      print("READY....")
-      print(this_var$dat_col_names_out)
-      Sys.sleep(5)
-      print("--- next set ---")
+    if (!("rca_id" %in% colnames(dat))) {
+      stop("column rca_id must be in environmental inputs")
     }
 
+    dat$row_id <- seq(1, nrow(dat))
+    dat <- dat[, c("row_id", "rca_id")]
 
-    # Add value to master dataframe
-    reach_out$new_var <- my_summary$ussum[match(reach_out$rid, my_summary$rid)]
+    # Summarize area by RCA id (count)
+    dat_df <- dat
+    dat_sum <-
+      dat_df %>% group_by(rca_id) %>% summarise(rcavals = n())
+    mydt <- dat_sum
 
-    # Relabel and export
-    colnames(reach_out)[ncol(reach_out)] <- this_var$dat_col_names_out
+    # Convert RCA data to simple data.table object for speed.
+    # from data.frame to data.table
+    setDT(mydt)
+    class(mydt)
+    setkey(mydt, rca_id)
+    key(mydt)
 
-    print(head(reach_out, 2))
+    # Merge to the stream to rid index table
+    # A giant summary table will be produced to group-by
+    # (rca polygons us and their associated values)
+    my_merge <- merge(mydt, net, key = "rca_id")
 
+    # Note the speed of data.table - takes 100X longer in base or dplyr
 
+    # Calculate the total sum for each stream reach (total upstream area)
+    # data.table group-by/summarize function (dplyr slow)
+    # rid is streamline edge id
+    metric_summary <- my_merge[, .(ussum_metric = sum(rcavals)), .(rid)]
 
-  } # end of dsum variable set
+    # head(my_merge)
+    # This object includes the total area coverage upstream
+    # of each stream ID
 
+    # -------------------------------------------------
+    print("Re-running summary for full RCA polygons...")
 
-  return(reach_out)
+    # Also calculate area of RCA polygons as m2
+    rca_polygons <- st_transform(rca_polygons, utm_zone)
+    rca_polygons$area_m2 <-
+      round(as.numeric(st_area(rca_polygons)), 4)
+    rca_polygons <- rca_polygons[, c("rca_id", "area_m2")]
 
+    rca_polygons_df <- rca_polygons
+    st_geometry(rca_polygons_df) <- NULL
+
+    # Redo above steps for full RCA polygons
+    mydt <- rca_polygons_df
+    setDT(mydt)
+    class(mydt)
+    setkey(mydt, rca_id)
+    key(mydt)
+    # Merge to the stream to rid index table
+    my_merge <- merge(mydt, net, key = "rca_id")
+
+    # Full RCA summary
+    full_rca_summary <- my_merge[, .(ussum_full = sum(area_m2)), .(rid)]
+
+    # This table includes the full drainage area upstream for
+    # each rca polygon
+    # head(full_rca_summary)
+
+    # Calculate upstream percent coverage by merging and
+    # dividing areas
+    fsum <- merge(
+      full_rca_summary,
+      metric_summary,
+      by.x = "rid",
+      by.y = "rid",
+      all.x = TRUE,
+      all.y = FALSE
+    )
+
+    fsum$coverage <- fsum$ussum_metric / fsum$ussum_full
+
+    fsum$coverage <- ifelse(is.na(fsum$coverage), 0, fsum$coverage)
+
+    # Update variable name
+    colnames(fsum)[colnames(fsum) == "coverage"] <- output_fieldname
+
+    print("Count is in #/meters squared")
+
+    # Export and return
+    ret_obj <- as.data.frame(fsum)
+    ret_obj <- ret_obj[, c("rid", output_fieldname)]
+
+    return(ret_obj)
+
+  }
 
 
 
 }
-
