@@ -95,3 +95,29 @@ strm_lines2 <- merge(strm_lines, linear_summary,
 strm_lines2$col <- ifelse(strm_lines2$sample_line == 0, 'lightgrey', 'blue')
 plot(st_geometry(strm_lines2), col = strm_lines2$col)
 plot(st_geometry(env_line), add = TRUE, col = "red")
+
+
+
+
+# Summarize upstream drainage area
+drainage_area <- summarize_upstream(
+  net = net,
+  summary_type = 'total_upstream_area',
+  rca_polygons = rca_polygons,
+  rca_env_data = rca_polygons,
+  utm_zone = 26910,
+  output_fieldname = 'sample_line'
+)
+head(drainage_area)
+
+# Output is polygon percent cover upstream of each stream reach ID
+strm_lines2 <- merge(strm_lines, drainage_area,
+                     by.x = "rid", by.y = "rid",
+                     all.x = TRUE, all.y = FALSE)
+
+strm_lines2$are_log <- log(strm_lines2$us_area_m2)
+plot(strm_lines2['us_area_m2'])
+plot(strm_lines2['are_log'])
+
+# drainage_area
+# write.csv(drainage_area, row.names = FALSE, file = "./environmental_vars/us_summaries/drainage_area.csv")
